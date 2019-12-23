@@ -11,6 +11,7 @@ contract RockPaperScissors is Pausable {
     HitchensUnorderedAddressSetLib.Set openGameRequests;
 
     event FundsTransferedToOwnerEvent(address indexed owner, uint256 amount);
+    event LogWithdrawEvent(address indexed sender, uint256 amountDrawn);
 
     uint public constant expiryDuration = 8 hours;
     constructor(bool _pausable) Pausable(_pausable) public {}
@@ -141,21 +142,14 @@ contract RockPaperScissors is Pausable {
         return keccak256(abi.encodePacked(move, salt));
     }
 
-    // function withdraw(bytes32 passw) public whenRunning {
-    //     bytes32 passwordHash = hashPasswords(msg.sender, passw);
-    //     Account storage account = accounts[passwordHash];
-    //     uint256 amount = account.amount;
-
-    //     require(amount > 0, "account should exist");
-    //     require(!isExpired(account.expiryTime), "account should not be expired");
-
-    //     emit WithdrawEvent(msg.sender, amount, passwordHash);
-    //     account.amount = 0;
-    //     account.expiryTime = 0;
-        
-    //     (bool success, ) = msg.sender.call.value(amount)("");
-    //     require(success, "transfer failed.");
-    // }
+    function withdraw(uint256 amount) public whenRunning {
+        require (amount > 0, "Withdraw amount should be higher than 0");
+        uint256 balanceSender = players[msg.sender];
+        players[msg.sender] = balanceSender.sub(amount);
+        emit LogWithdrawEvent(msg.sender, amount);
+        (bool success, ) = msg.sender.call.value(amount)("");
+        require(success, "Transfer failed.");
+    }
 
     function transferFunds() public whenKilled onlyOwner {
         uint256 amount = address(this).balance;
