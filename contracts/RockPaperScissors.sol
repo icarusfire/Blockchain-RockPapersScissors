@@ -2,121 +2,160 @@ pragma solidity 0.5.10;
 
 import "./Pausable.sol";
 import "./SafeMath.sol";
+// import "./HitchensUnorderedKeySet.sol";
+import "./HitchensUnorderedAddressSet.sol";
 
 contract RockPaperScissors is Pausable {
     using SafeMath for uint256;
+    using HitchensUnorderedAddressSetLib for HitchensUnorderedAddressSetLib.Set;
+    HitchensUnorderedAddressSetLib.Set openGameRequests;
+
+    event FundsTransferedToOwnerEvent(address indexed owner, uint256 amount);
+
     uint public constant expiryDuration = 8 hours;
     constructor(bool _pausable) Pausable(_pausable) public {}
 
-    enum Move{Rock, Paper, Scissors}
+    enum Move{NoMove, Rock, Paper, Scissors}
 
-    mapping(bytes32 => Commit) public commits;
-    struct Commit {
-        address sender;
-        uint256 amount;
-        uint expiryTime;
-        bool isRevealed;
-    }
+    mapping(bytes32 => address) public commits;
+    mapping(address => uint256) public players;
 
-    mapping(address => Player) public players;
-    struct Player {
-        uint256 balance;
-        uint256 lastBetAmount;
-        bytes32 lastMoveHash;
-    }
-
-    mapping(bytes32 => Game) public games;
+    mapping(address => Game) public games;
     struct Game {
         address player2;
         uint256 amount;
+        bool isStarted;
+        bool isAccepted;
+        uint gameStartedBlockNumber;
+        address winner;
+
+        Move movePlayer1;
+        Move movePlayer2;
     }
 
-    function startGame(address player2) public payable{
-        Game storage game = games[msg.sender];
-        game.player2 = player2;
+//*********************** Functions for the game creator ******************************************************** */
+
+    //Open a new game wait for an opponent
+    function openNewGame() public payable whenRunning{
+        address key = msg.sender;
+        openGameRequests.insert(key); // Note that this will fail automatically if the key already exists.
+        Game storage game = games[key];
         game.amount = msg.value;
+        game.isStarted = false;
     }
 
-    function startGame(bytes32 moveHash) public payable{
-        createPlayer(msg.sender, moveHash, msg.value);
-        createCommit(moveHash);
+    // poll for candidates
+    function checkCandidateOpponent() public view returns (address){
+        Game storage game = games[msg.sender];
+        return game.player2;
     }
 
-    function createCommit(bytes32 moveHash) public payable whenRunning returns (Commit memory){
-        require(moveHash > 0, "passwordHash should not be empty");
-        Commit storage commit = commits[moveHash];
-        commit.sender = msg.sender;
-        commit.amount = msg.value;
-        commit.expiryTime = now.add(expiryDuration);
-        return commit;
+    //If after polling, there is a potential candidate, accept the challenge and make the move.
+    function acceptAndStartGame(bytes32 moveHash) public {
+        Game storage game = games[msg.sender];
+        game.isAccepted = true;
+        commits[moveHash] = msg.sender;
     }
 
-    function createPlayer(address addr, bytes32 moveHash, uint256 amount) public payable whenRunning returns (Player memory){
-        require(moveHash > 0, "moveHash should not be empty");
-        Player storage player = players[addr];
-        player.lastMoveHash = moveHash;
-        player.lastBetAmount = amount;
-        return player;
+    //If after polling, there is a nasty candidate, decline, (add him to blacklist.)
+    function declineTheRequest() public {
+        Game storage game = games[msg.sender];
+        game.isAccepted = false;
+        game.player2 = address(0);
+    }
+//********************************************************************************************************************** */
+
+
+//*********************** Functions for the candidate opponent ******************************************************** */
+
+    //Get available games
+    function getOpenGames() public whenRunning returns (bytes32[] memory) {
+           //iterate over openGameRequests
+           //return a list of addreses
     }
 
-    function reveal(Move move, bytes32 salt) public payable whenRunning {
+    //Request to join an open game someone created with their address
+    function requestToJoinGame(address addr) public payable whenRunning{
+        //check if msg.value is same as requested
+        //check game.player2 is empty
+        Game storage game = games[addr];
+        game.player2 = msg.sender;
+    }
+
+    // poll if game is accepted
+    function checkIfGameIsAccepted(address addr) public view whenRunning returns (bool){
+        Game storage game = games[addr];
+        return game.isAccepted;
+    }
+
+    //After polling, when game is accepted, player2 joins the game by his moves hash, game is offically started.
+    function joinToAcceptedGame(bytes32 moveHash, address addressGameCreator) public whenRunning{
+        Game storage game = games[addressGameCreator];
+        require(game.player2 == msg.sender, "Challange should be accepted to join");
+        require(game.isAccepted, "Challange should be accepted to join");
+        require(moveHash > 0, "Hash can not be zero");
+        game.gameStartedBlockNumber = block.number;
+        commits[moveHash] = addressGameCreator;
+        game.isStarted = true;
+    }
+
+//********************************************************************************************************************** */
+
+    //after polling, if game is started reveal your hand
+    function reveal(Move move, bytes32 salt) public payable whenRunning returns (bool) {
         require(salt > 0, "salt should not be empty");
         bytes32 moveHash = calculateMoveHash(move, salt);
-        Commit storage commit = commits[moveHash];
-        address sender = commit.sender;
-        require(sender != address(0), "commit should exist");
+        address gameCreatorAddress = commits[moveHash];
+        require(gameCreatorAddress != address(0), "claimed hash should exist");
+        Game storage game = games[gameCreatorAddress];
+        require(game.gameStartedBlockNumber < block.number, "only reveal if commit is mined");
+        require(game.winner == address(0), "winner is not settled yet");
+
+        if(game.player2 == msg.sender){
+            game.movePlayer2 = move;
+        }
+        else if(gameCreatorAddress == msg.sender){
+            game.movePlayer1 = move;
+        }
+        else {
+            revert("game should belong to the sender");
+        }
+
+        address winner = tryToSettle(game.movePlayer1, game.movePlayer2, gameCreatorAddress, game.player2);
+        if(winner != address(0)){
+            game.winner = winner;
+            //do accounting
+            return true;
+        }
+        return false;
     }
 
-    function calculateMoveHash(Move move, bytes32 salt) public view returns (bytes32){
+    function tryToSettle(Move moverPlayer1, Move moverPlayer2, address player1, address player2) public view returns (address){
+        //compare enums of both players
+        //both should exist
+        return address(0);
+    }
+
+    function calculateMoveHash(Move move, bytes32 salt) public pure returns (bytes32){
         require(salt > 0, "salt should not be empty");
         return keccak256(abi.encodePacked(move, salt));
     }
 
+    // function withdraw(bytes32 passw) public whenRunning {
+    //     bytes32 passwordHash = hashPasswords(msg.sender, passw);
+    //     Account storage account = accounts[passwordHash];
+    //     uint256 amount = account.amount;
 
+    //     require(amount > 0, "account should exist");
+    //     require(!isExpired(account.expiryTime), "account should not be expired");
 
-
-
-
-
-
-    function withdraw(bytes32 passw) public whenRunning {
-        bytes32 passwordHash = hashPasswords(msg.sender, passw);
-        Account storage account = accounts[passwordHash];
-        uint256 amount = account.amount;
-
-        require(amount > 0, "account should exist");
-        require(!isExpired(account.expiryTime), "account should not be expired");
-
-        emit WithdrawEvent(msg.sender, amount, passwordHash);
-        account.amount = 0;
-        account.expiryTime = 0;
+    //     emit WithdrawEvent(msg.sender, amount, passwordHash);
+    //     account.amount = 0;
+    //     account.expiryTime = 0;
         
-        (bool success, ) = msg.sender.call.value(amount)("");
-        require(success, "transfer failed.");
-    }
-
-    function cancelRockPaperScissors(bytes32 passwordHash) public whenRunning {
-        Account storage account = accounts[passwordHash];
-        uint256 amount = account.amount;
-
-        require(amount > 0, "account should exist");
-        require(account.sender == msg.sender, "only sender can cancel the payment");
-        require(isExpired(account.expiryTime), "account should be expired");
-
-        emit WithdrawEvent(msg.sender, amount, passwordHash);
-        account.amount = 0;
-        account.expiryTime = 0;
-
-        (bool success, ) = msg.sender.call.value(amount)("");
-        require(success, "transfer failed.");
-    }
-
-
-    function validateCandidateHash(bytes32 candidateHash, address addr, bytes32 passw) public view returns (bool){
-        require(candidateHash > 0, "passwordHash should not be empty");
-        require(candidateHash == hashPasswords(addr, passw), "Hashes do not match");
-        return true;
-    }
+    //     (bool success, ) = msg.sender.call.value(amount)("");
+    //     require(success, "transfer failed.");
+    // }
 
     function transferFunds() public whenKilled onlyOwner {
         uint256 amount = address(this).balance;
