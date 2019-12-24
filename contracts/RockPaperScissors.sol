@@ -2,18 +2,16 @@ pragma solidity 0.5.10;
 
 import "./Pausable.sol";
 import "./SafeMath.sol";
-// import "./HitchensUnorderedKeySet.sol";
 import "./HitchensUnorderedAddressSet.sol";
 
 contract RockPaperScissors is Pausable {
     using SafeMath for uint256;
     using HitchensUnorderedAddressSetLib for HitchensUnorderedAddressSetLib.Set;
     HitchensUnorderedAddressSetLib.Set openGameRequests;
+    uint public constant expiryDuration = 1 hours;
 
     event FundsTransferedToOwnerEvent(address indexed owner, uint256 amount);
     event LogWithdrawEvent(address indexed sender, uint256 amountDrawn);
-
-    uint public constant expiryDuration = 8 hours;
     constructor(bool _pausable) Pausable(_pausable) public {}
 
     enum Move{NoMove, Rock, Paper, Scissors}
@@ -22,6 +20,7 @@ contract RockPaperScissors is Pausable {
     mapping(address => uint256) public players;
 
     mapping(address => Game) public games;
+
     struct Game {
         address player2;
         uint256 amount;
@@ -126,6 +125,8 @@ contract RockPaperScissors is Pausable {
         if(winner != address(0)){
             game.winner = winner;
             //do accounting
+            //when to remove account?
+            openGameRequests.remove(gameCreatorAddress);
             return true;
         }
         return false;
