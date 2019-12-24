@@ -33,6 +33,8 @@ contract RockPaperScissors is Pausable {
         Move movePlayer2;
     }
 
+    
+
 //*********************** Functions for the game creator ******************************************************** */
 
     //Open a new game wait for an opponent
