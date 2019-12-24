@@ -33,7 +33,6 @@ contract RockPaperScissors is Pausable {
         Move movePlayer2;
     }
 
-    
 
 //*********************** Functions for the game creator ******************************************************** */
 
