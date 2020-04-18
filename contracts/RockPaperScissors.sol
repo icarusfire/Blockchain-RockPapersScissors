@@ -33,6 +33,26 @@ contract RockPaperScissors is Pausable {
         Move movePlayer2;
     }
 
+
+/*  FLOW
+    - Player1 (game creator) creates a game by sending some gas(the money he wants to bet)
+    - Player2 wanst to join a game, he can get all open games and their money requirement.
+    - Player2 calls method requestToJoinGame().
+    - Player1 can check if anyone wants to join by polling checkCandidateOpponent method. He can decline a request or accept a potential candidate.
+    - Player2 polls checkIfGameIsAccepted() to see if his join request is accepted. If accepted he calls joinToAcceptedGame() Sends a calculated hash of his move: keccak( salt + move)
+    - Both players poll if game.isStarted = true; If so they call method reveal(Move move, bytes32 salt). Yhis method checks if hash can be calculated correctly, and if so whose move wins.
+
+
+To be fixed:
+- What is the best time Player1 sends his move? If he sends in openNewGame() Then he has to choose his move without knowing his opponent,
+ this can be a slight disadvantage because other player knows his opponent before making his move.
+
+- Player1 should be able to blacklist people. 
+- Using address as key might not be the best option for Player1. Currenlty he cant restart a new game until he withdraws the money
+
+*/
+
+
 //*********************** Functions for the game creator ******************************************************** */
 
     //Open a new game wait for an opponent
@@ -133,8 +153,9 @@ contract RockPaperScissors is Pausable {
     }
 
     function tryToSettle(Move moverPlayer1, Move moverPlayer2, address player1, address player2) public view returns (address){
-        //compare enums of both players
+        //compare enums(ROCK,PAPER,SCISSORS) of both players. decide winner.
         //both should exist
+        //return address of winner
         return address(0);
     }
 
